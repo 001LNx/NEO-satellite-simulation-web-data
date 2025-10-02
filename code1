@@ -1,0 +1,183 @@
+import { useRef, useMemo } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls, Sphere, Html } from "@react-three/drei";
+import * as THREE from "three";
+
+interface OrbitalDiagramProps {
+  debrisData: any[];
+}
+
+function Earth() {
+  return (
+    <Sphere args={[1, 64, 64]} position={[0, 0, 0]}>
+      <meshStandardMaterial
+        color="#2b5fa8"
+        emissive="#1a3d6b"
+        emissiveIntensity={0.2}
+        roughness={0.7}
+      />
+    </Sphere>
+  );
+}
+
+function Moon() {
+  const moonRef = useRef<THREE.Mesh>(null);
+  
+  useFrame((state) => {
+    if (moonRef.current) {
+      // Orbit moon around Earth
+      const time = state.clock.getElapsedTime() * 0.1;
+      moonRef.current.position.x = Math.cos(time) * 8;
+      moonRef.current.position.z = Math.sin(time) * 8;
+      moonRef.current.rotation.y += 0.001;
+    }
+  });
+
+  return (
+    <Sphere ref={moonRef} args={[0.27, 32, 32]} position={[8, 0, 0]}>
+      <meshStandardMaterial
+        color="#808080"
+        emissive="#404040"
+        emissiveIntensity={0.1}
+        roughness={0.9}
+      />
+    </Sphere>
+  );
+}
+
+function DebrisField({ debrisData }: { debrisData: any[] }) {
+  const debrisRef = useRef<THREE.Group>(null);
+
+  useFrame((state) => {
+    if (debrisRef.current) {
+      debrisRef.current.rotation.y += 0.0002;
+    }
+  });
+
+  const debris = useMemo(() => {
+    // Show ALL debris data for accurate representation
+    return debrisData.map((item, i) => {
+      const altitude = (item.altitude || 400);
+      // Scale radius based on actual altitude (LEO: 400-2000km, MEO: 2000-35786km, GEO: 35786km+)
+      // Earth radius = 1, so LEO starts at ~1.06 (400km above 6371km earth radius)
+      const earthRadiusScale = 1;
+      const radius = earthRadiusScale + (altitude / 6371) * 10; // Scale for visibility
+      
+      // Distribute debris spherically around Earth with realistic distribution
+      const phi = Math.acos(-1 + (2 * i) / debrisData.length);
+      const theta = Math.sqrt(debrisData.length * Math.PI) * phi;
+
+      return {
+        position: new THREE.Vector3(
+          radius * Math.sin(phi) * Math.cos(theta),
+          radius * Math.sin(phi) * Math.sin(theta),
+          radius * Math.cos(phi)
+        ),
+        riskLevel: item.riskLevel,
+        id: item.id,
+        altitude: altitude,
+        type: item.type,
+      };
+    });
+  }, [debrisData]);
+
+  return (
+    <group ref={debrisRef}>
+      {debris.map((d, i) => (
+        <mesh key={i} position={d.position}>
+          <sphereGeometry args={[0.01, 8, 8]} />
+          <meshBasicMaterial
+            color={
+              d.riskLevel === "HIGH"
+                ? "#84ff00"
+                : d.riskLevel === "MEDIUM"
+                ? "#84ff00"
+                : "#84ff00"
+            }
+            transparent
+            opacity={d.riskLevel === "HIGH" ? 1.0 : d.riskLevel === "MEDIUM" ? 0.7 : 0.5}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function OrbitalRings() {
+  const rings = [
+    { radius: 1.15, label: "LEO (400km)", color: "#cccccc" },
+    { radius: 1.5, label: "MEO (2000km)", color: "#aaaaaa" },
+    { radius: 2.2, label: "GEO (35786km)", color: "#888888" },
+  ];
+
+  return (
+    <>
+      {rings.map((ring, i) => (
+        <mesh key={i} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+          <ringGeometry args={[ring.radius - 0.005, ring.radius + 0.005, 64]} />
+          <meshBasicMaterial
+            color={ring.color}
+            transparent
+            opacity={0.3}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+const OrbitalDiagram = ({ debrisData }: OrbitalDiagramProps) => {
+  return (
+    <div className="w-full h-[600px] bg-black rounded-lg technical-border overflow-hidden relative">
+      <Canvas camera={{ position: [5, 3, 5], fov: 50 }}>
+        <color attach="background" args={["#000000"]} />
+        <ambientLight intensity={0.3} />
+        <pointLight position={[10, 10, 10]} intensity={0.6} />
+        <pointLight position={[-10, -10, -10]} intensity={0.2} />
+        
+        <Earth />
+        <Moon />
+        <OrbitalRings />
+        <DebrisField debrisData={debrisData} />
+        
+        <OrbitControls
+          enablePan={false}
+          enableZoom={true}
+          minDistance={3}
+          maxDistance={15}
+          autoRotate
+          autoRotateSpeed={0.3}
+        />
+        
+        <Html position={[-3, 2.5, 0]} style={{ pointerEvents: 'none' }}>
+          <div className="text-white text-xs font-mono-tech">
+            <div className="bg-black/80 px-2 py-1 rounded border border-primary/50">
+              EARTH-MOON SYSTEM
+            </div>
+          </div>
+        </Html>
+      </Canvas>
+      
+      <div className="absolute bottom-4 left-4 right-4 flex gap-4 text-xs font-mono-tech text-white">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-[#84ff00]" style={{ opacity: 1.0 }} />
+          <span className="risk-high">HIGH RISK</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-[#84ff00]" style={{ opacity: 0.7 }} />
+          <span className="risk-medium">MEDIUM RISK</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-[#84ff00]" style={{ opacity: 0.5 }} />
+          <span className="risk-low">LOW RISK</span>
+        </div>
+        <div className="ml-auto text-white">
+          <span>TOTAL OBJECTS: {debrisData.length}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default OrbitalDiagram;
